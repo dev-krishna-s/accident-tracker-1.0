@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, FlatList, StyleSheet, TouchableOpacity, Linking, Alert } from 'react-native';
-import { collection, query, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, onSnapshot, doc, updateDoc, addDoc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -9,20 +9,42 @@ const AccidentRecords = () => {
   const [accidentReports, setAccidentReports] = useState([]);
   const navigation = useNavigation();
 
+  // Listen for accident report changes in real time
   useEffect(() => {
     const q = query(collection(db, 'accidentReports'));
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const reports = [];
-      querySnapshot.forEach((doc) => {
-        reports.push({ id: doc.id, ...doc.data() });
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        let timestamp;
+        
+        // Handle timestamp conversion safely
+        if (data.timestamp && typeof data.timestamp.toDate === 'function') {
+          timestamp = data.timestamp.toDate(); // Firestore Timestamp
+        } else if (data.timestamp) {
+          timestamp = new Date(data.timestamp); // ISO string or milliseconds
+        } else {
+          timestamp = new Date(); // Fallback to current time
+        }
+        
+        reports.push({ 
+          id: docSnap.id, 
+          ...data,
+          timestamp: timestamp
+        });
       });
+      
+      // Sort reports by timestamp in descending order (newest first)
+      reports.sort((a, b) => b.timestamp - a.timestamp);
+      
       setAccidentReports(reports);
     });
     return () => unsubscribe();
   }, []);
 
+  // Handle driver response: open maps, update status, and send notification to the reporting user
   const handleRespond = async (item) => {
-    // Handle location
+    // Open Google Maps with the accident location
     if (item.location && typeof item.location.latitude === 'number' && typeof item.location.longitude === 'number') {
       const url = `https://www.google.com/maps/search/?api=1&query=${item.location.latitude},${item.location.longitude}`;
       Linking.openURL(url).catch((err) =>
@@ -32,13 +54,26 @@ const AccidentRecords = () => {
       Alert.alert('Location Error', 'Invalid location data for this accident.');
     }
 
-    // Update status in Firestore
+    // Update the accident report status and send notification
     try {
+      // Update the accident report status to "Help on way"
       const reportRef = doc(db, 'accidentReports', item.id);
       await updateDoc(reportRef, {
         status: 'Help on way'
       });
+
+      // If the accident report has a valid userId, add a notification to that user's notifications collection
+      if (item.userId) {
+        const notificationsRef = collection(db, 'users', item.userId, 'notifications');
+        await addDoc(notificationsRef, {
+          message: '🚑 Help is on the way! A driver has responded to your accident report.',
+          timestamp: new Date().toISOString(),
+          read: false,
+          type: 'accident_response'
+        });
+      }
     } catch (error) {
+      console.error('Error adding notification:', error);
       Alert.alert('Update Error', 'Could not update status: ' + error.message);
     }
   };
@@ -48,12 +83,12 @@ const AccidentRecords = () => {
       <View style={styles.recordHeader}>
         <View style={styles.titleAndStatus}>
           <Text style={styles.recordTitle}>Accident Record</Text>
-          <View style={[styles.statusBadge, { backgroundColor: item.status === 'Help on way' ? '#5cb85c' : '#f0ad4e' }]}>
-            <Text style={styles.statusText}>{item.status}</Text>
+          <View style={[styles.badge, { backgroundColor: item.status === 'Help on way' ? '#5cb85c' : '#f0ad4e' }]}>
+            <Text style={styles.badgeText}>{item.status}</Text>
           </View>
         </View>
-        <TouchableOpacity style={styles.responseTag} onPress={() => handleRespond(item)}>
-          <Text style={styles.responseTagText}>Respond</Text>
+        <TouchableOpacity style={styles.responseButton} onPress={() => handleRespond(item)}>
+          <Text style={styles.responseButtonText}>Respond</Text>
         </TouchableOpacity>
       </View>
       <Text style={styles.recordText}>Severity: {item.severity}</Text>
@@ -94,12 +129,6 @@ const styles = StyleSheet.create({
     padding: 16,
     backgroundColor: '#f2f2f2',
   },
-  statusBadge: {
-    paddingVertical: 2,
-    paddingHorizontal: 8,
-    borderRadius: 12,
-    marginLeft: 8,
-  },
   headerTitle: { fontSize: 20, fontWeight: 'bold', marginLeft: 16 },
   listContent: { padding: 16 },
   recordItem: {
@@ -120,21 +149,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   recordTitle: { fontSize: 18, fontWeight: 'bold' },
-  statusBadge: {
-    backgroundColor: '#f0ad4e',
+  badge: {
     paddingVertical: 2,
     paddingHorizontal: 8,
     borderRadius: 12,
     marginLeft: 8,
   },
-  statusText: { color: 'white', fontSize: 14, fontWeight: 'bold' },
-  responseTag: {
+  badgeText: { color: 'white', fontSize: 14, fontWeight: 'bold' },
+  responseButton: {
     backgroundColor: '#007bff',
     paddingVertical: 4,
     paddingHorizontal: 8,
     borderRadius: 12,
   },
-  responseTagText: { color: 'white', fontSize: 14, fontWeight: 'bold' },
+  responseButtonText: { color: 'white', fontSize: 14, fontWeight: 'bold' },
   recordText: { fontSize: 16, marginBottom: 4 },
   emptyText: { textAlign: 'center', marginTop: 20, fontSize: 16 },
 });
