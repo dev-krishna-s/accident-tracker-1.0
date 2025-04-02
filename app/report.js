@@ -1,14 +1,17 @@
 import { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { collection, addDoc } from 'firebase/firestore';
-import { db } from '../firebaseConfig';
-import { useLocalSearchParams } from 'expo-router';
+import { db, auth } from '../firebaseConfig';
 
 export default function ReportScreen() {
   const params = useLocalSearchParams();
+  // Use userId from params if auth.currentUser is not available
+  const userIdFromParams = params.userId;
+  const loggedUserId = auth.currentUser ? auth.currentUser.uid : userIdFromParams;
+
   const [severity, setSeverity] = useState('Critical');
   const [casualties, setCasualties] = useState('1');
   const [accidentType, setAccidentType] = useState('Bus');
@@ -24,6 +27,10 @@ export default function ReportScreen() {
       Alert.alert('Error', 'Location data is missing');
       return;
     }
+    if (!loggedUserId) {
+      Alert.alert('Error', 'User is not logged in. Please log in to submit a report.');
+      return;
+    }
     setIsSubmitting(true);
     const reportData = {
       severity,
@@ -31,35 +38,26 @@ export default function ReportScreen() {
       accidentType,
       vehiclesInvolved,
       timestamp: new Date().toISOString(),
-      // Add location data
       location: {
         latitude: location.lat,
         longitude: location.lng
       },
-      status: 'Unattended'
+      status: 'Unattended',
+      userId: loggedUserId
     };
 
-  //   // Simulate API call
-  //   setTimeout(() => {
-  //     console.log('Submitted:', reportData);
-  //     setIsSubmitting(false);
-  //     Alert.alert('Success', 'Accident report submitted successfully');
-  //     router.back();
-  //   }, 1500);
-  // };
-  try {
-    // Store the report data in a Firestore collection called 'accidentReports'
-    const docRef = await addDoc(collection(db, "accidentReports"), reportData);
-    console.log("Document written with ID:", docRef.id);
-    Alert.alert('Success', 'Accident report submitted successfully');
-    router.back();
-  } catch (error) {
-    console.error("Error adding document:", error);
-    Alert.alert('Error', 'There was an error submitting your report');
-  } finally {
-    setIsSubmitting(false);
-  }
-};
+    try {
+      const docRef = await addDoc(collection(db, "accidentReports"), reportData);
+      console.log("Document written with ID:", docRef.id);
+      Alert.alert('Success', 'Accident report submitted successfully');
+      router.back();
+    } catch (error) {
+      console.error("Error adding document:", error);
+      Alert.alert('Error', 'There was an error submitting your report');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
