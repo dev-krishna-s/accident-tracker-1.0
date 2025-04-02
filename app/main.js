@@ -3,26 +3,47 @@ import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import MapView, { Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebaseConfig';
 
 export default function MainScreen() {
   const params = useLocalSearchParams();
   const userName = params.userName || 'User';
+  const userId = params.userId; // Retrieve userId from navigation parameters
   const [location, setLocation] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
 
+  // Request and set location permissions
   useEffect(() => {
     (async () => {
-      let { status } = await Location.requestForegroundPermissionsAsync();
+      const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         setErrorMsg('Permission to access location was denied');
         Alert.alert('Location Required', 'Please enable location services to use this app.');
         return;
       }
-
-      let currentLocation = await Location.getCurrentPositionAsync({});
+      const currentLocation = await Location.getCurrentPositionAsync({});
       setLocation(currentLocation.coords);
     })();
   }, []);
+
+  // Firebase notifications listener
+  useEffect(() => {
+    if (!userId) return; // Ensure userId is available
+
+    const notificationsRef = collection(db, 'users', userId, 'notifications');
+    const q = query(notificationsRef, where('read', '==', false));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === 'added') {
+          Alert.alert('Update Received', change.doc.data().message);
+        }
+      });
+    });
+
+    return () => unsubscribe();
+  }, [userId]);
 
   return (
     <View style={styles.container}>
@@ -42,11 +63,11 @@ export default function MainScreen() {
           region={
             location
               ? {
-                latitude: location.latitude,
-                longitude: location.longitude,
-                latitudeDelta: 0.01,
-                longitudeDelta: 0.01,
-              }
+                  latitude: location.latitude,
+                  longitude: location.longitude,
+                  latitudeDelta: 0.01,
+                  longitudeDelta: 0.01,
+                }
               : undefined
           }
         >
@@ -70,13 +91,16 @@ export default function MainScreen() {
 
         <TouchableOpacity
           style={styles.emergencyButton}
-          onPress={() => router.push({
-            pathname: '/report',
-            params: {
-              lat: location?.latitude,
-              lng: location?.longitude
-            }
-          })}
+          onPress={() =>
+            router.push({
+              pathname: '/report',
+              params: {
+                lat: location?.latitude,
+                lng: location?.longitude,
+                userId: userId, // Pass userId to the report screen
+              },
+            })
+          }
         >
           <Text style={styles.buttonText}>Report Emergency</Text>
         </TouchableOpacity>
