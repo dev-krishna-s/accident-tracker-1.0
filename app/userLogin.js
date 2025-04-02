@@ -25,10 +25,12 @@ export default function UserLoginScreen() {
       if (querySnapshot.empty) {
         Alert.alert('Login Failed', 'Invalid Aadhar number or password');
       } else {
-        // Successful login: navigate to main page
+        // Get the first matching document and its ID
+        const userDoc = querySnapshot.docs[0];
+        const userId = userDoc.id;
         router.push({
           pathname: '/main',
-          params: { aadhar }
+          params: { aadhar, userId }  // Pass the userId along
         });
       }
     } catch (error) {
@@ -37,10 +39,10 @@ export default function UserLoginScreen() {
       setIsLoading(false);
     }
   };
-
   const handleGoToRegister = () => {
     router.push('/userRegistration'); // Navigate to registration screen
   };
+
 
   return (
     <View style={styles.container}>
@@ -100,6 +102,15 @@ const styles = StyleSheet.create({
     padding: 15,
     fontSize: 16,
   },
+  registerLink: {
+    marginTop: 20,
+    alignItems: 'center',
+  },
+  registerText: {
+    color: '#e53935',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   button: {
     backgroundColor: '#e53935',
     borderRadius: 25,
@@ -109,15 +120,6 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  registerLink: {
-    marginTop: 20,
-    alignItems: 'center',
-  },
-  registerText: {
-    color: '#e53935',
     fontSize: 16,
     fontWeight: '600',
   },
